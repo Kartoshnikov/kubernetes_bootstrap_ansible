@@ -1,0 +1,22 @@
+---
+- tags:
+  - etcd
+  block:
+  - include: install.yml
+    tags: 
+    - etcd_install
+    - install
+
+  - include: ssl.yml
+    tags: etcd_ssl
+    
+  - include: config.yml
+    tags: 
+      - etcd_config
+      - config
+
+
+- name: Remove etcd
+  include: etcd-remove.yml
+  tags: 
+    - "{{ 'never' if (ansible_run_tags | intersect(['remove', 'etcd_remove']) | length) == 0 else 'always' }}"

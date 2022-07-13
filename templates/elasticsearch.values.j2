@@ -1,0 +1,49 @@
+clusterName: "elasticsearch"
+nodeGroup: "master"
+
+replicas: 1
+minimumMasterNodes: 1
+esJavaOpts: "-Xmx2g -Xms2g"
+volumeClaimTemplate:
+  storageClassName: {{ storage_class_name }}
+  resources:
+    requests:
+      storage: {{ elasticsearch_pv_size }}
+
+resources:
+  requests:
+    memory: "3Gi"
+  limits:
+    memory: "3Gi"
+
+extraContainers:
+- name: elasticsearch-exporter
+  image: justwatch/elasticsearch_exporter
+  command:
+  - elasticsearch_exporter
+  - --web.listen-address=:{{ elasticsearch_exporter_port }}
+  - --es.all
+  - --es.cluster_settings
+  - --es.indices
+  - --es.shards
+  ports:
+  - containerPort: {{ elasticsearch_exporter_port }}
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "{{ elasticsearch_exporter_port }}"
+
+lifecycle:
+  postStart:
+    exec:
+      command:
+        - bash
+        - -c
+        - |
+          #!/bin/bash
+          TEMPLATE_NAME=fluentd
+          ES_URL=http://localhost:9200
+          while [[ "$(curl -s -o /dev/null -w '%{http_code}\n' $ES_URL)" != "200" ]]; do sleep 1; done
+          curl -XPUT "$ES_URL/_index_template/$TEMPLATE_NAME" -H 'Content-Type: application/json' -d'{"index_patterns":["fluentd-*"],"template":{"settings":{"number_of_replicas":0,"number_of_shards":1,"index.lifecycle.name":"cleanup-fluentd"}},"_meta":{"description":"Template for Fluentd logs"}}'
+          curl -XPUT "$ES_URL/_ilm/policy/cleanup-fluentd" -H 'Content-Type: application/json' -d'{"policy":{"phases":{"hot":{"actions":{}},"delete":{"min_age":"{{ elasticsearch_indices_reten }}","actions":{"delete":{}}}}}}'

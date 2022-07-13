@@ -1,0 +1,44 @@
+---
+- name: Create HAProxy configuration files.
+  template:
+    src: "{{ item }}"
+    dest: "/etc/haproxy/{{ item | basename | replace('.j2', '') }}"
+    owner: root
+    group: root
+    mode: 0640
+  loop: "{{ query('fileglob', 'templates/haproxy/*.j2') }}"
+  notify: restart haproxy
+
+- name: Set sysctl
+  sysctl:
+    name: "{{ item }}"
+    value: '1'
+    sysctl_set: yes
+    reload: yes
+  loop:
+    - net.ipv4.ip_nonlocal_bind
+    - net.ipv4.ip_forward
+
+# - name: Wait for HAProxy to come up
+#   wait_for:
+#     host: "{{ haprosy_virtual_ip }}"
+#     port: "{{ haproxy_k8s_port }}"
+#     state: "started"
+#     delay: 5
+#     timeout: 300
+
+- name: Create Keepalived configuration files.
+  template:
+    src: "{{ item }}"
+    dest: "/etc/keepalived/{{ item | basename | replace('.j2', '') }}"
+    owner: root
+    group: root
+    mode: 0640
+  loop: "{{ query('fileglob', 'templates/keepalived/*.j2') }}"
+  notify: restart keepalived
+
+# - name: Change mode of authentication file to 600
+#   file:
+#     dest: "/etc/ha.d/authkeys"
+#     mode: 0600
+#   notify: restart heartbeat

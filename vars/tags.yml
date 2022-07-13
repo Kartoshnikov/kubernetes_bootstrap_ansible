@@ -1,0 +1,47 @@
+haproxy_role_tags:
+  - haproxy
+  - haproxy_config
+  - haproxy_install
+  - haproxy_remove
+
+etcd_role_tags:
+  - etcd
+  - etcd_config
+  - etcd_install
+  - etcd_remove
+  - etcd_ssl
+
+kmaster_role_tags:
+  - kmaster
+  - kmaster_config
+  - kmaster_install
+  - kmaster_remove
+  - kmaster_ssl
+  - kmaster_helm
+
+kworker_role_tags:
+  - kworker
+  - kworker_config
+  - kworker_install
+  - kworker_remove
+
+glusterfs_role_tags:
+  - glusterfs
+  - glusterfs_config
+  - glusterfs_install
+  - glusterfs_remove
+
+elasticsearch_role_tags:
+  - elasticsearch
+  - elasticsearch_config
+  - elasticsearch_install
+  - elasticsearch_remove
+  - elasticsearch_templates
+  - elasticsearch_plugins
+  - elasticsearch_xpack
+
+kibana_role_tags:
+  - kibana           
+  - kibana_install
+  - kibana_config
+  - kibana_remove

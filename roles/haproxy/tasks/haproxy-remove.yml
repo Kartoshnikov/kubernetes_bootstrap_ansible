@@ -1,0 +1,54 @@
+---
+- name: Check if the haproxy package is installed
+  command: "dpkg-query -W -f'${Status}' haproxy"
+  register: haproxy_package
+  failed_when: False
+  changed_when: False
+  check_mode: no
+
+- when: haproxy_package.stdout == 'install ok installed'
+  block:
+  - name: Stop services
+    systemd:
+      name: "{{ item }}"
+      state: stopped
+    loop:
+      - haproxy
+      - keepalived
+
+  - name: Debian - Remove haproxy and keepalived
+    apt:
+      name: "{{ item }}"
+      state: absent
+      purge: yes
+      autoremove: yes
+    loop:
+      - "haproxy"
+      - "keepalived"
+
+
+  - name: Delete data
+    file:
+      path: "{{ item }}"
+      state: absent
+    loop: 
+      # - "/etc/ha.d"
+      - "/etc/haproxy"
+      - "/run/haproxy"
+      - "/var/lib/haproxy"
+      # - "/run/heartbeat"
+      # - "/var/lib/heartbeat"
+      - "/etc/keepalived"
+
+  - name: Systemd daemon reload
+    systemd: daemon_reload=yes
+
+  - name: Set sysctl
+    sysctl:
+      name: "{{ item }}"
+      value: '0'
+      sysctl_set: yes
+      reload: yes
+    loop:
+      - net.ipv4.ip_nonlocal_bind
+      - net.ipv4.ip_forward

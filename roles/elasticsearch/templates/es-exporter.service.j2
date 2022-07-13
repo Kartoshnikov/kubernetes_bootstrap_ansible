@@ -1,0 +1,13 @@
+[Unit]
+Description=Prometheus exporter for ElasticSearch
+After=network.target
+
+[Service]
+Type=simple
+Environment="qESEXPORT_OPTS=--web.listen-address=:{{ elasticsearch_exporter_port }} --es.all --es.cluster_settings --es.indices --es.shards"
+ExecStart=/etc/elasticsearch_exporter/elasticsearch_exporter $ESEXPORT_OPTS
+ExecStop=kill $MAINPID
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+
+[Unit]
+Description=etcd
+
+[Service]
+User={{ etcd_user }}
+Type=notify
+EnvironmentFile=-{{ etcd_conf_path }}/options.env
+ExecStart=/usr/local/bin/etcd
+Restart=always
+RestartSec=10s
+LimitNOFILE={{ etcd_no_file }}
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

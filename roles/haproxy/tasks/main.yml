@@ -1,0 +1,25 @@
+- tags:
+  - haproxy
+  block:
+  - tags: 
+    - haproxy_install
+    - install
+    block:
+    - name: Include OS Specific setup tasks
+      include: setup-Debian.yml
+      when: ansible_os_family == 'Debian'
+
+    - name: Include OS Specific setup tasks
+      include: setup-RedHat.yml
+      when: ansible_os_family == 'RedHat'
+
+  - include: config.yml
+    tags: 
+      - haproxy_config
+      - config
+
+
+- name: Remove haproxy
+  include: haproxy-remove.yml
+  tags: 
+    - "{{ 'never' if (ansible_run_tags | intersect(['remove', 'haproxy_remove']) | length) == 0 else 'always' }}"

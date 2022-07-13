@@ -1,0 +1,32 @@
+forwarder:
+  containerPorts:
+  - name: tcp
+    containerPort: 24224
+    protocol: TCP
+  - name: http
+    containerPort: 9880
+    protocol: TCP
+  service:
+    ports:
+      tcp:
+        port: 24224
+        targetPort: tcp
+        protocol: TCP
+      http:
+        port: 9880
+        targetPort: http
+        protocol: TCP
+  configFile: fluentd.conf
+  configMap: fluentd-forwarder-cm
+  extraEnv:
+  - name: ELASTICSEARCH_HOSTS
+    value: "{{ groups.elastic | map('extract', hostvars, 'ansible_host') | zip([elastic_data_port,]*(groups.elastic | length)) | map('join', ':') | join(',') }}"
+  - name: ELASTICSEARCH_PORT
+    value: "9200"
+  tolerations:
+  - key: "node-role.kubernetes.io/master"
+    operator: "Equal"
+    effect: "NoSchedule"
+
+aggregator:
+  enabled: false

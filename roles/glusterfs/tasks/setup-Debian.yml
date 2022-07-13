@@ -1,0 +1,30 @@
+---
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - dm_snapshot
+    - dm_mirror
+    - dm_thin_pool
+    - dm_multipath
+    - target_core_user
+
+- name: Ensure kernel modules are loaded on boot
+  copy:
+    src: "{{ item }}"
+    dest: "/etc/modules-load.d/{{ item | basename }}"
+  loop: "{{ q('fileglob', 'files/kernel_modules/*') }}"
+
+- name: Add Gluster 7 repo
+  apt_repository:
+    repo: ppa:gluster/glusterfs-7
+
+- name: Install packages
+  apt:
+    name: "{{ item }}"
+    state: present
+    cache_valid_time: 86400
+  loop:
+    - thin-provisioning-tools
+    - glusterfs-client

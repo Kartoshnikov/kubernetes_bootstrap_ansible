@@ -1,0 +1,12 @@
+elasticsearchHosts: [{% for server in groups.elastic %}\"http://{{ hostvars[server].ansible_host }}:{{elastic_data_port}}\"{% if not loop.last %},{% endif %}{% endfor %}]
+imageTag: "7.9.2"
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: {{ internal_ingress_name }}
+  hosts:
+  - {{ kibana_hostname }}
+  tls:
+  - secretName: example-tls
+    hosts:
+    - {{ kibana_hostname }}

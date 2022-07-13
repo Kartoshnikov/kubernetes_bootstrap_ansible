@@ -1,0 +1,68 @@
+---
+- name: Copy SSL key pair
+  copy:
+    src: "{{ item }}"
+    dest: "/home/kubernetes/{{ item }}"
+  loop:
+  - example_com.crt
+  - example_com.key
+
+- name: Copy config files templates
+  template:
+    src: "{{ item }}"
+    dest: "/home/kubernetes/{{ item | replace('.j2', '') }}"
+  loop:
+  - ingress-nginx.values.j2
+  - ingress-internal.values.j2
+  - node-problem-detector.values.j2
+  - kubernetes-dashboard.values.j2
+  - metrics-server.values.j2
+  - "{{ influxdb_name }}.values.j2"
+  - telegraf.values.j2
+  - grafana.values.j2
+  - prometheus.values.j2
+  - fluentd.values.j2
+  - fluentd_config.yml.j2
+  - kibana.values.j2
+
+- name: Create TLS Secrets for TLS Termination
+  command: "kubectl -n default create secret tls example-tls --key /home/kubernetes/example_com.key --cert /home/kubernetes/example_com.crt"
+  register: res
+  changed_when: not 'AlreadyExists' in res.stderr
+  failed_when: not res.rc == 0 and not 'AlreadyExists' in res.stderr
+
+- name: Deploy MetalLB
+  command: helm install --namespace metallb-system --create-namespace metallb bitnami/metallb
+  register: res
+  changed_when: not 'cannot re-use a name that is still in use' in res.stderr
+  failed_when: not res.rc == 0 and not 'cannot re-use a name that is still in use' in res.stderr
+
+- name: Apply MetalLB config
+  command: kubectl apply -f /home/kubernetes/metallb_config.yml
+
+- name: "Create management namespace: {{ metrics_ns }}"
+  command: "kubectl create ns {{ metrics_ns }}"
+  changed_when: not ('cannot re-use a name that is still in use' in res.stderr or 'already exists' in res.stderr)
+  failed_when: not (res.rc == 0 or 'cannot re-use a name that is still in use' in res.stderr or 'already exists' in res.stderr)
+
+- name: Apply Fluend ConfigMap
+  command: "kubectl -n {{ metrics_ns }} apply -f /home/kubernetes/fluentd_config.yml"
+
+- name: Deploy miscellaneous charts
+  command: "helm install --namespace {{ item.ns }} --create-namespace -f /home/kubernetes/{{ item.name }}.values {{ item.name }} {{ item.repo }}"
+  register: res
+  changed_when: not ('cannot re-use a name that is still in use' in res.stderr or 'already exists' in res.stderr)
+  failed_when: not (res.rc == 0 or 'cannot re-use a name that is still in use' in res.stderr or 'already exists' in res.stderr)
+  loop:
+  - { name: 'ingress-nginx', repo: 'ingress-nginx/ingress-nginx', ns: "ingress-nginx"}
+  - { name: 'ingress-internal', repo: 'ingress-nginx/ingress-nginx', ns: "ingress-nginx"}
+  - { name: 'node-problem-detector', repo: 'stable/node-problem-detector', ns: "kube-system"}
+  - { name: 'metrics-server', repo: 'bitnami/metrics-server', ns: "{{ metrics_ns }}"}
+  - { name: "{{ influxdb_name }}", repo: 'influxdata/influxdb', ns: "{{ metrics_ns }}"}
+  - { name: 'telegraf', repo: 'influxdata/telegraf-ds', ns: "{{ metrics_ns }}"}
+  - { name: 'kubernetes-dashboard', repo: 'kubernetes-dashboard/kubernetes-dashboard', ns: "{{ metrics_ns }}"}
+  - { name: 'grafana', repo: 'grafana/grafana', ns: "{{ metrics_ns }}"}
+  - { name: "{{ prometheus_name }}", repo: 'prometheus-community/prometheus', ns: "{{ metrics_ns }}"}
+  - { name: 'fluentd', repo: 'bitnami/fluentd', ns: "{{ metrics_ns }}"}
+  - { name: "kibana", repo: 'elastic/kibana', ns: "{{ metrics_ns }}"}
+

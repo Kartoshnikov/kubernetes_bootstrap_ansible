@@ -1,0 +1,12 @@
+tolerations:
+- key: "node-role.kubernetes.io/master"
+  operator: "Equal"
+  effect: "NoSchedule"
+rbac:
+  clusterWide: true
+config:
+  outputs:
+  - influxdb:
+      urls:
+      - http://{{ influxdb_name }}:8086
+      database: {{ influx_telegraf_db }}

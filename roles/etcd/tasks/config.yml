@@ -1,0 +1,37 @@
+---
+- set_fact:
+    initial_servers: |
+      {% set sep = joiner(",") %}
+      {% for server in groups.etcd -%}
+        {{ sep() }}{{ hostvars[server].ansible_hostname }}=https://{{ hostvars[server].ansible_host }}:2380
+      {%- endfor %}
+
+- name: ETCD | Create configuration files.
+  template:
+    src: "{{ item }}"
+    dest: "{{ etcd_conf_path }}/{{ item | basename | replace('.j2', '') }}"
+    owner: "{{ etcd_user }}"
+    group: "{{ etcd_group }}"
+  loop: "{{ query('fileglob', 'templates/confs/*.j2') }}"
+  notify: restart etcd
+
+- name: ETCD | Make shure etcd is started
+  systemd:
+    name: etcd
+    state: started
+
+- name: ETCD | Check if cluster already exists
+  delegate_to: "{{ groups.etcd[0] }}"
+  command: etcdctl member list
+  register: etcd_members
+  failed_when: false
+
+- when: etcd_members.stdout is defined and hostvars[inventory_hostname].ansible_hostname not in etcd_members.stdout
+  block:
+  - name: ETCD | Set env if cluster exists
+    set_fact:
+      if_existed: true
+
+  - name: ETCD | Add new host to the cluster
+    delegate_to: "{{ groups.etcd[0] }}"
+    command: "etcdctl member add {{ hostvars[inventory_hostname].ansible_hostname }} --peer-urls=https://{{ hostvars[inventory_hostname].ansible_default_ipv4.address }}:2380"

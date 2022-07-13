@@ -1,0 +1,49 @@
+---
+- name: Installing dependencies
+  apt:
+    name: curl
+    state: present
+    cache_valid_time: 86400
+
+- name: Check Helm version
+  command: bash -c "helm version --template={% raw %}'{{ .Version }}'{% endraw %} | tr -d 'v'"
+  register: helm_insalled_version
+  changed_when: false
+  ignore_errors: true
+
+- when: helm_insalled_version.stdout == '' or ((helm_insalled_version.stdout is version(helm_version, '==') and helm_force_reinstall) or 
+        (helm_insalled_version.stdout is version(helm_version, '>') and helm_allow_downgrade) or
+        helm_insalled_version.stdout is version(helm_version, '<'))
+  block:
+  - name: "Create /tmp/helm-{{ helm_version }} dir"
+    file:
+      path: "/tmp/helm-{{ helm_version }}"
+      state: directory
+
+  - name: Untar helm
+    unarchive:
+      extra_opts: ['--strip-components=1']
+      src: "{{ helm_sources_url }}"
+      remote_src: true
+      dest: "/tmp/helm-{{ helm_version }}"
+
+  - name: Copy helm and helmctl executables in /usr/local/bin
+    command: "cp --preserve=mode /tmp/helm-{{ helm_version }}/helm /usr/local/bin/helm"
+    
+  - become: yes
+    become_user: kubernetes
+    block:
+    - name: Add helm repos
+      command: "helm repo add {{ item.name }} {{ item.repo }}"
+      loop:
+        - { name: "stable", repo: "https://kubernetes-charts.storage.googleapis.com/" }
+        - { name: "ingress-nginx", repo: "https://kubernetes.github.io/ingress-nginx" }
+        - { name: "bitnami", repo: "https://charts.bitnami.com/bitnami" }
+        - { name: "kubernetes-dashboard", repo: "https://kubernetes.github.io/dashboard/" }
+        - { name: "influxdata", repo: "https://helm.influxdata.com/" }
+        - { name: "grafana", repo: "https://grafana.github.io/helm-charts" }
+        - { name: "prometheus-community", repo: "https://prometheus-community.github.io/helm-charts" }
+        - { name: "elastic", repo: "https://helm.elastic.co" }
+
+    - name: Update Helm repos
+      command: "helm repo update"

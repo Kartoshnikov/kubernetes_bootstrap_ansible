@@ -1,0 +1,17 @@
+protocolHttp: yes
+metricsScraper:
+  enabled: true
+ingress:
+  annotations:
+    kubernetes.io/ingress.class: {{ internal_ingress_name }}
+  enabled: true
+  hosts:
+  - {{ dashboards_hostname }}
+  tls:
+  - secretName: example-tls
+    hosts:
+    - {{ dashboards_hostname }}
+rbac:
+  create: true
+  clusterRoleMetrics: true
+  clusterReadOnlyRole: true

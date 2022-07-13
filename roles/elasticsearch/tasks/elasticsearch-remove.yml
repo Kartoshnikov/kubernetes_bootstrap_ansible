@@ -1,0 +1,58 @@
+---
+
+- debug:
+    msg: "{{ es_package_name }}"
+
+- name: Check if the elasticsearch package is installed
+  shell: "dpkg-query -W -f'${Status}' {{ es_package_name }}"
+  register: elasticsearch_package
+  failed_when: False
+  changed_when: False
+  check_mode: no
+
+- name: Gracefully stop and remove elasticsearch elasticsearch_package
+  become: yes
+  when: elasticsearch_package.stdout == 'install ok installed'
+  block:
+    - name: stop elasticsearch
+      systemd:
+        name: 'elasticsearch'
+        state: stopped
+
+    - name: stop exporter
+      systemd:
+        name: 'es-exporter.service'
+        state: stopped    
+
+    # - name: unhold elasticsearch package
+    #   dpkg_selections:
+    #     name: "{{ es_package_name }}"
+    #     selection: "install"
+
+    - name: Debian - Remove elasticsearch package
+      apt:
+        name: "{{ es_package_name }}"
+        state: absent
+        purge: yes
+        autoremove: yes
+
+    - name: Debian - Make sure /var/lib/dpkg/statoverride doesn't contain elasticsearch
+      lineinfile:
+        path: /var/lib/dpkg/statoverride
+        state: absent
+        regexp: '^elasticsearch'
+
+    - name: Delete data
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ [ es_data_dirs, es_pid_dir, es_log_dir, '/etc/elasticsearch_exporter', '/etc/systemd/system/es-exporter.service' ] | flatten(levels=1) }}"
+
+    - name: Systemd daemon reload
+      systemd: daemon_reload=yes
+
+    - name: Debian - Remove repositories
+      apt_repository:
+        repo: "{{ es_apt_url }}"
+        state: absent
+      when: es_add_repository

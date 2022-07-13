@@ -1,0 +1,86 @@
+---
+- name: ETCD | Create ssl directory
+  file:
+    path: /etc/ssl/etcd
+    state: directory
+
+- name: ETCD | Copy ca.crt
+  copy:
+    src: "../../shared_files/ca.crt"
+    dest: "/etc/ssl/etcd/ca.crt"
+    mode: 0644
+    owner: "{{ etcd_user }}"
+    group: "{{ etcd_group }}"
+
+- name: ETCD | Generate private key
+  openssl_privatekey:
+    path: /etc/ssl/etcd/etcd.key
+    type: "RSA"
+    size: 2048
+    mode: 0600
+    owner: "{{ etcd_user }}"
+    group: "{{ etcd_group }}"
+
+- name: ETCD | Generate CSR
+  openssl_csr:
+    path: /etc/ssl/etcd/etcd.csr
+    privatekey_path: /etc/ssl/etcd/etcd.key
+    common_name: "{{ hostvars[inventory_hostname].ansible_hostname }}"
+    digest: "sha256"
+    basic_constraints: "CA:FALSE"
+    key_usage:
+      - nonRepudiation
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - clientAuth
+      - serverAuth
+    subject_alt_name: "IP:{{ hostvars[inventory_hostname].ansible_default_ipv4.address }},DNS:{{ hostvars[inventory_hostname].ansible_fqdn }}"
+
+- name: ETCD | Fetch CSR
+  fetch:
+    src: /etc/ssl/etcd/etcd.csr
+    dest: "roles/shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/"
+    flat: yes
+
+- delegate_to: "{{ groups.root_ca[0] }}"
+  block: 
+  - name: ETCD | Copy CSR on Root CA host
+    copy: 
+      src: "../../shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/etcd.csr"
+      dest: "/root/ca/csr/etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.csr"
+
+  - name: ETCD | Sing CSR
+    openssl_certificate:
+      provider: ownca
+      path: "/root/ca/certs/etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+      csr_path: "/root/ca/csr/etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.csr"
+      ownca_path: "/root/ca/certs/ca.crt"
+      ownca_privatekey_path: "/root/ca/private/ca.key"
+      ownca_privatekey_passphrase: "{{ ca_passphrase }}"
+      ownca_not_after: "+11250d"
+    register: signed
+
+  - name: "ETCD | Append ca.crt to etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+    shell: "cat /root/ca/certs/ca.crt >> /root/ca/certs/etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+    when: signed.changed
+  
+  - name: ETCD | Fetch CRT 
+    fetch:
+      src: "/root/ca/certs/etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+      dest: "roles/shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/"
+      flat: yes 
+
+- name: "ETCD | Copy CRT file to {{ hostvars[inventory_hostname].ansible_hostname }} node"
+  copy:
+    src: "../../shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/etcd-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+    dest: /etc/ssl/etcd/etcd.crt
+    mode: 0644
+    owner: "{{ etcd_user }}"
+    group: "{{ etcd_group }}"
+  notify: restart etcd
+
+- name: ETCD | Remove CRT file
+  file:
+    path: /etc/ssl/etcd/etcd.csr
+    state: absent

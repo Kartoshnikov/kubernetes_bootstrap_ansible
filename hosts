@@ -1,0 +1,25 @@
+[haproxy]
+master  ansible_host=192.168.10.121
+slave   ansible_host=192.168.10.122
+
+[k8s_masters]
+master0 ansible_host=192.168.10.123
+master1 ansible_host=192.168.10.124
+master2 ansible_host=192.168.10.126
+
+[k8s_workers]
+worker0 ansible_host=192.168.10.127
+worker1 ansible_host=192.168.10.128
+worker2 ansible_host=192.168.10.129
+
+[etcd]
+master0
+master1
+master2
+
+[elastic]
+elastic0  ansible_host=192.168.10.130
+
+[glusterfs]
+worker0 devices='["/dev/sdb"]'
+

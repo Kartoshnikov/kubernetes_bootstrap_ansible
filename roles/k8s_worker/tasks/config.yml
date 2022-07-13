@@ -1,0 +1,53 @@
+---
+- name: Disable swappiness and pass bridged IPv4 traffic to iptable's chains
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: yes
+    reload: yes
+  with_items:
+    - { name: 'vm.swappiness', value: '0' }
+    - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+
+- name: Check if kubernetes node is already in cluster
+  delegate_to: "{{ hostvars[groups.k8s_masters[0]].ansible_host }}"
+  command: "kubectl get nodes"
+  become: yes
+  become_user: kubernetes
+  register: cluster_nodes
+  ignore_errors: true
+
+- when: hostvars[inventory_hostname].ansible_hostname not in cluster_nodes.stdout
+  block:
+  - delegate_to: "{{ hostvars[groups.k8s_masters[0]].ansible_host }}"
+    block:
+    - name: Get ca.crt content
+      command: cat /etc/kubernetes/pki/ca.crt
+      register: pem
+
+    - name: Get discovery-token-ca-cert-hash
+      set_fact:
+        discovery_token_ca_cert_hash: "{{ pem.stdout | spki_fingerprint }}"
+
+    - name: Check if token already exists
+      command: kubeadm token list
+      register: if_tokens
+
+    - name: Upload certs
+      command: "kubeadm init phase upload-certs --upload-certs --config /root/init-config.yml"
+      when: "'Proxy for managing TTL for the kubeadm-certs secret' not in if_tokens.stdout"
+      ignore_errors: true
+
+    - name: Create token
+      command: "kubeadm token create --config /root/init-config.yml"
+      when: k8s_join_bootstrap_token not in if_tokens.stdout
+      ignore_errors: true
+
+  - name: Join new worker to the cluster
+    command: "kubeadm join {{ k8s_api_dns }}:{{ k8s_api_port }} --token {{ k8s_join_bootstrap_token }} --discovery-token-ca-cert-hash sha256:{{ discovery_token_ca_cert_hash }}"
+
+  - name: Delete token
+    delegate_to: "{{ hostvars[groups.k8s_masters[0]].ansible_host }}"
+    command: "kubeadm token delete {{ k8s_join_bootstrap_token }}"
+    when: inventory_hostname == ansible_play_batch[-1]

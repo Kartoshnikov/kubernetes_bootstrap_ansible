@@ -1,0 +1,35 @@
+---
+- tags:
+  - kmaster
+  block:
+  - name: Configure SSL
+    include: ssl.yml
+    tags: kmaster_ssl
+      
+  - tags: 
+    - kmaster_install
+    - install
+    block:
+    - name: Include OS Specific setup tasks
+      include: setup-Debian.yml
+      when: ansible_os_family == 'Debian'
+
+    - name: Include OS Specific setup tasks
+      include: setup-RedHat.yml
+      when: ansible_os_family == 'RedHat'
+
+    - name: Install Helm
+      include: helm.yml
+      tags: kmaster_helm
+
+  - name: Configure master nodes
+    include: config.yml
+    tags: 
+      - kmaster_config
+      # - config
+
+
+- name: Remove kmaster
+  include: remove.yml
+  tags: 
+    - "{{ 'never' if (ansible_run_tags | intersect(['remove', 'kmaster_remove']) | length) == 0 else 'always' }}"

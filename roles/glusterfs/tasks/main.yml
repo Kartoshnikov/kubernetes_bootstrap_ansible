@@ -1,0 +1,26 @@
+---
+- tags:
+  - glusterfs
+  block:
+  - tags: 
+    - glusterfs_install
+    - install
+    block:
+    - name: Include OS Specific setup tasks
+      include: setup-Debian.yml
+      when: ansible_os_family == 'Debian'
+
+    - name: Include OS Specific setup tasks
+      include: setup-RedHat.yml
+      when: ansible_os_family == 'RedHat'
+
+  - include: config.yml
+    tags: 
+      - glusterfs_config
+      # - config
+
+
+- name: Remove glusterfs
+  include: remove.yml
+  tags: 
+    - "{{ 'never' if (ansible_run_tags | intersect(['remove', 'glusterfs_remove']) | length) == 0 else 'always' }}"

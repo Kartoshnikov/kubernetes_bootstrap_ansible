@@ -1,0 +1,156 @@
+---
+- name: Disable swappiness and pass bridged IPv4 traffic to iptable's chains
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: yes
+    reload: yes
+  with_items:
+    - { name: 'vm.swappiness', value: '0' }
+    - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+
+- name: Check if kubernetes node is already in cluster
+  delegate_to: "{{ hostvars[groups.k8s_masters[0]].ansible_host }}"
+  command: "kubectl get nodes"
+  become: yes
+  become_user: kubernetes
+  register: cluster_nodes
+  ignore_errors: true
+
+- name: Copy config files
+  template:
+    src: "{{ item }}"
+    dest: "/root/{{ item | replace('.j2', '') }}"
+  loop:
+    - kubeadm-config.yml.j2
+    - init-config.yml.j2
+
+- name: Copy MetalLB configMap and FlannelD config
+  template:
+    src: "{{ item }}"
+    dest: "/home/kubernetes/{{ item | replace('.j2', '') }}"
+    owner: kubernetes
+    group: kubernetes
+  loop:
+    - metallb_config.yml.j2
+    - kube-flannel.yml.j2
+
+
+- when: cluster_nodes.stdout == ''
+  block:
+  - name: Initialize the cluster
+    shell: kubeadm init --config /root/kubeadm-config.yml > /tmp/cluster_initialized.txt
+    args:
+      chdir: /root
+    # notify: restart kubelet
+
+  - name: Fetch init phase log
+    fetch:
+      src: /tmp/cluster_initialized.txt
+      dest: "roles/shared_files/k8s_init_logs/"
+      flat: yes
+
+  - name: Create .kube directory in kubernetes's HOME
+    file:
+      path: "/home/kubernetes/.kube"
+      state: directory
+      owner: kubernetes
+      group: kubernetes
+      mode: 0750
+
+  - name: Copy config file
+    copy:
+      remote_src: yes
+      src: /etc/kubernetes/admin.conf
+      dest: /home/kubernetes/.kube/config
+      owner: kubernetes
+      group: kubernetes
+      mode: 0640
+
+  - name: Deploy Flannel network plugin
+    become: yes
+    become_user: kubernetes
+    become_flags: '-i'
+    command: "kubectl apply -f kube-flannel.yml"
+
+
+- when: cluster_nodes.stdout != '' and hostvars[inventory_hostname].ansible_hostname not in cluster_nodes.stdout
+  block:
+  - delegate_to: "{{ hostvars[groups.k8s_masters[0]].ansible_host }}"
+    block:
+    - name: Get ca.crt content
+      command: cat /etc/kubernetes/pki/ca.crt
+      register: pem
+
+    - name: Get discovery-token-ca-cert-hash
+      set_fact:
+        discovery_token_ca_cert_hash: "{{ pem.stdout | spki_fingerprint }}"
+
+    - name: Check if token already exists
+      command: kubeadm token list
+      register: if_tokens
+
+    - name: Upload certs
+      command: "kubeadm init phase upload-certs --upload-certs --config /root/init-config.yml"
+      when: "'Proxy for managing TTL for the kubeadm-certs secret' not in if_tokens.stdout"
+
+    - name: Create token
+      command: "kubeadm token create --config /root/init-config.yml"
+      when: k8s_join_bootstrap_token not in if_tokens.stdout
+
+  - name: Copy config files
+    template:
+      src: "{{ item }}"
+      dest: "/root/{{ item | replace('.j2', '') }}"
+    loop:
+      - join-config.yml.j2
+
+  - name: Join new master to the cluster
+    command: "kubeadm join --config /root/join-config.yml"
+    # notify: restart kubelet
+
+  - name: Delete token
+    delegate_to: "{{ hostvars[groups.k8s_masters[0]].ansible_host }}"
+    command: "kubeadm token delete {{ k8s_join_bootstrap_token }}"
+    # when: inventory_hostname == ansible_play_batch[-1]
+
+  - name: Create .kube directory in kubernetes's HOME
+    file:
+      path: "/home/kubernetes/.kube"
+      state: directory
+      owner: kubernetes
+      group: kubernetes
+      mode: 0750
+
+  - name: Copy config file
+    copy:
+      remote_src: yes
+      src: /etc/kubernetes/admin.conf
+      dest: /home/kubernetes/.kube/config
+      owner: kubernetes
+      group: kubernetes
+      mode: 0640
+
+- when: hostvars[inventory_hostname].ansible_hostname in cluster_nodes.stdout
+  block:
+  - set_fact:
+      etcd_servers: |
+        {% set sep = joiner(",") %}
+        {% for server in groups.etcd -%}
+          {{ sep() }}https://{{ hostvars[server].ansible_host }}:2379
+        {%- endfor %}
+
+  - name: Ensure ETCD endpoints list is up-to-date
+    lineinfile:
+      path: /etc/kubernetes/manifests/kube-apiserver.yaml
+      regexp: "--etcd-servers="
+      line: "    - --etcd-servers={{ etcd_servers.strip() }}"
+
+
+- name: Patch kube-controller-manager.yaml
+  lineinfile:
+    path: /etc/kubernetes/manifests/kube-controller-manager.yaml
+    regexp: "^  dnsPolicy: "
+    insertafter: "^  hostNetwork: true"
+    line: "  dnsPolicy: ClusterFirstWithHostNet"

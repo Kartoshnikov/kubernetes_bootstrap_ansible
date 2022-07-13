@@ -1,0 +1,39 @@
+---
+- run_once: true
+  delegate_to: "{{ groups.k8s_masters[0] }}"
+  become_user: kubernetes
+  block:
+  - name: Calculate number of gluster hosts
+    set_fact:
+      gluster_hosts: "{{ groups['glusterfs'] | length }}"
+
+  - name: Get heketi pod name
+    command: kubectl get po -o jsonpath='{.items[?(@.metadata.labels.heketi=="pod")].metadata.name}'
+    register: heketi_pod_name
+
+  - when: heketi_pod_name.stdout == ''
+    block:
+    - name: Copy deploy script directory to master node
+      copy: 
+        src: files/heketi-glusterfs/
+        dest: ~/heketi-glusterfs/
+
+    - name: Deliver files
+      template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      loop:
+      - { src: "topology.json.j2", dest: "~/heketi-glusterfs/topology.json" }
+      - { src: "StorageClass_Secret.yml.j2", dest: "~/storageClass_Secret.yml" }
+
+    - name: Deploy glusterfs
+      shell: "bash gk-deploy -gvy --admin-key '{{ admin_key }}' --user-key '{{ user_key }}' {{ '--single-node' if gluster_hosts == '1' else '' }} > /tmp/gk-deploy.log"
+      args:
+        chdir: "~/heketi-glusterfs/"
+
+    - name: Create StorageClass and Secret for it
+      command: kubectl apply -f ~/storageClass_Secret.yml
+
+  # - when: not heketi_pod_name.stdout == ''
+  #   block:
+  #   - 

@@ -1,0 +1,77 @@
+---
+- name: Create ssl directory
+  file:
+    path: /etc/kubernetes/pki/etcd
+    state: directory
+
+- name: Copy ca.crt
+  copy:
+    src: "../../shared_files/ca.crt"
+    dest: "/etc/kubernetes/pki/etcd/ca.crt"
+    mode: 0644
+
+- name: Generate private key
+  openssl_privatekey:
+    path: /etc/kubernetes/pki/etcd/etcd-client.key
+    type: "RSA"
+    size: 2048
+    mode: 0600
+
+- name: Generate CSR
+  openssl_csr:
+    path: /etc/kubernetes/pki/etcd/etcd-client.csr
+    privatekey_path: /etc/kubernetes/pki/etcd/etcd-client.key
+    common_name: "{{ hostvars[inventory_hostname].ansible_hostname }}"
+    digest: "sha256"
+    basic_constraints: "CA:FALSE"
+    key_usage:
+      - nonRepudiation
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - clientAuth
+
+- name: Fetch CSR
+  fetch:
+    src: /etc/kubernetes/pki/etcd/etcd-client.csr
+    dest: "roles/shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/"
+    flat: yes
+
+- delegate_to: "{{ groups.root_ca[0] }}"
+  block: 
+  - name: Copy CSR on Root CA host
+    copy: 
+      src: "../../shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/etcd-client.csr"
+      dest: "/root/ca/csr/etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.csr"
+
+  - name: Sing CSR
+    openssl_certificate:
+      provider: ownca
+      path: "/root/ca/certs/etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+      csr_path: "/root/ca/csr/etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.csr"
+      ownca_path: "/root/ca/certs/ca.crt"
+      ownca_privatekey_path: "/root/ca/private/ca.key"
+      ownca_privatekey_passphrase: "{{ ca_passphrase }}"
+      ownca_not_after: "+11250d"
+    register: signed
+
+  - name: "Append ca.crt to etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+    shell: "cat /root/ca/certs/ca.crt >> /root/ca/certs/etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+    when: signed.changed
+  
+  - name: Fetch CRT 
+    fetch:
+      src: "/root/ca/certs/etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+      dest: "roles/shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/"
+      flat: yes 
+
+- name: "Copy CRT file to {{ hostvars[inventory_hostname].ansible_hostname }} node"
+  copy:
+    src: "../../shared_files/certs/{{ hostvars[inventory_hostname].ansible_hostname }}/etcd-client-{{ hostvars[inventory_hostname].ansible_hostname }}.crt"
+    dest: /etc/kubernetes/pki/etcd/etcd-client.crt
+    mode: 0644
+
+- name: Remove CRT file
+  file:
+    path: /etc/kubernetes/pki/etcd/etcd-client.csr
+    state: absent

@@ -1,0 +1,105 @@
+---
+- name: Check installation
+  command: dpkg-query -W -f'${Status}' kubeadm
+  register: kubeadm_package
+  failed_when: False
+  changed_when: False
+
+- when: kubeadm_package.stdout == 'install ok installed'
+  block:
+  - name: Stop kubelet and docker
+    systemd:
+      name: "{{ item }}"
+      state: stopped
+    loop:
+      - kubelet
+      - docker
+
+  - name: Reset Kubernetes 
+    command: kubeadm reset -f
+
+  - name: "Delete {{ hostvars[inventory_hostname].ansible_hostname }}"
+    command: "kubectl delete node {{ hostvars[inventory_hostname].ansible_hostname }}"
+    become: yes
+    become_user: kubernetes
+    when: groups.k8s_masters | length != ansible_play_batch | length
+    ignore_errors: yes
+
+  - name: Remove the 'kubernetes' user
+    user: 
+      name: kubernetes 
+      state: absent
+      remove: yes
+
+  - name: Remove 'kubernetes' from sudoers
+    lineinfile:
+      path: /etc/sudoers
+      regexp: '^kubernetes'
+      state: absent
+      validate: 'visudo -cf %s'
+
+  - name: Uninstall packages
+    apt:
+      name: "{{ package }}"
+      state: absent
+      purge: yes
+      autoremove: yes
+    loop:
+      - "docker-ce={{ docker_version }}"
+      - "kubectl={{ kube_version }}-00"
+      - "kubelet={{ kube_version }}-00"
+      - "kubeadm={{ kube_version }}-00"
+    loop_control:
+      loop_var: "package"
+
+  - name: Uninstall pip packages
+    pip:
+      name:
+        - kubernetes
+        - kubernetes-validate
+        - openshift
+        - requests
+      state: absent
+      executable: pip3
+
+  - name: Remove Directories
+    file:
+      path: "{{ item }}"
+      state: absent
+    loop:
+      - /etc/cni/net.d/
+      - /etc/kubernetes/
+      - /var/log/pods/
+      - /usr/libexec/kubernetes/
+      - /var/lib/kubelet/
+
+  - name: Remove Helm
+    file:
+      path: "{{ item }}"
+      state: absent
+    loop:
+      - /usr/local/bin/helm
+      - "/tmp/helm-{{ helm_version }}"
+
+  - name: Delete config files
+    file:
+      path: "/root/{{ item | replace('.j2', '') }}"
+      state: absent
+    loop: 
+      - kubeadm-config.yml.j2
+      - init-config.yml.j2
+
+  - name: Delete Kubernetes and Docker APT repository
+    apt_repository:
+      repo: "{{ item.repo }}"
+      state: absent
+      filename: "{{ item.fname }}"
+    loop:
+      - { repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main", fname: "kubernetes" }
+      - { repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ hostvars[inventory_hostname].ansible_distribution_release }} stable", fname: "docker" }
+
+  - name: Clear IPVS
+    command: ipvsadm --clear
+
+  - name: Reload systemd
+    systemd: daemon_reload=yes

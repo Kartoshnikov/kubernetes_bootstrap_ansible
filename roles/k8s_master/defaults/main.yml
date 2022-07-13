@@ -1,0 +1,20 @@
+kube_version: "1.18.3"
+
+helm_version: "3.2.1"
+helm_force_reinstall: false
+helm_allow_downgrade: false
+helm_sources_url: "https://get.helm.sh/helm-v{{ helm_version }}-linux-amd64.tar.gz"
+
+# apt-cache madison docker-ce
+docker_version: "5:19.03.11~3-0~ubuntu-focal"
+docker_max_log_size: "100m"
+
+copy_pud_key: false
+
+k8s_api_dns: "k8sapi.example.com"
+k8s_api_port: 6443
+
+k8s_join_certificate_key: ""
+k8s_join_bootstrap_token: ""
+
+metallb_pool: "192.168.21.1-192.168.21.255"

@@ -1,0 +1,5 @@
+haprosy_virtual_ip: 192.168.0.1
+haproxy_k8s_port: 6443
+# echo -n SYperSUcr3T | md5sum
+heartbeat_auth_string: "985bc92395d6d4cee6a23cad8746c162"
+keepalive_pass: "83g%J6Bffwdc"

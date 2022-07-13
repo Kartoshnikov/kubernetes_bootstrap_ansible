@@ -1,0 +1,55 @@
+# {{ ansible_managed }}
+# Global Settings for notifications
+global_defs {
+    notification_email {
+        admin@example.com     		# Email address for notifications 
+    }
+    notification_email_from keepalived@kubernetes.local	# The from address for the notifications
+    smtp_server 127.0.0.1     				# SMTP server address
+    smtp_connect_timeout 15
+}
+  
+# Define the script used to check if haproxy is still working
+vrrp_script chk_haproxy { 
+    script "/usr/bin/killall -0 haproxy"
+    interval 2 
+    weight 2 
+}
+  
+# Configuration for Virtual Interface
+vrrp_instance LB_VIP {
+    interface {{ hostvars[inventory_hostname].ansible_default_ipv4.interface }}
+{% if inventory_hostname == "master" %}
+    state MASTER
+    priority 101
+{% elif inventory_hostname == "slave" %}
+	state BACKUP
+    priority 100
+{% endif %}
+    virtual_router_id 51
+  
+    smtp_alert          # Enable Notifications Via Email
+  
+    authentication {
+        auth_type AH
+        auth_pass {{ keepalive_pass }}	# Password for accessing vrrpd. Same on all devices
+    }
+    unicast_src_ip {{ hostvars[inventory_hostname].ansible_host }}
+    unicast_peer {
+{% if inventory_hostname == "master" %}
+        {{ hostvars["slave"].ansible_host }}
+{% elif inventory_hostname == "slave" %}
+		{{ hostvars["master"].ansible_host }}
+{% endif %}
+   }
+  
+    # The virtual ip address shared between the two loadbalancers
+    virtual_ipaddress {
+        {{ haprosy_virtual_ip }}
+    }
+     
+    # Use the Defined Script to Check whether to initiate a fail over
+    track_script {
+        chk_haproxy
+    }
+}

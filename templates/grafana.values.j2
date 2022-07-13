@@ -1,0 +1,54 @@
+adminUser: {{ grafana_user }}
+adminPassword: '{{ grafana_pass }}'
+ingress:
+  annotations:
+    kubernetes.io/ingress.class: {{ internal_ingress_name }}
+  enabled: true
+  hosts:
+  - {{ grafana_hostname }}
+  tls:
+  - secretName: example-tls
+    hosts:
+    - {{ grafana_hostname }}
+persistence:
+  enabled: true
+  storageClassName: {{ storage_class_name }}
+  size: {{ grafana_pv_size }}
+plugins:
+{{ grafana_plagins | to_nice_yaml }}
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+    - name: InfluxDB
+      type: influxdb
+      access: proxy
+      url: http://{{ influxdb_name }}:8086
+      database: {{ influx_telegraf_db }}
+      user: {{ influxdb_admin_user }}
+      secureJsonData:
+        password: '{{ influxdb_admin_pass }}'
+      jsonData:
+        httpMode: GET
+    - name: Prometheus
+      type: prometheus
+      url: http://{{ prometheus_name }}-server
+      access: proxy
+grafana.ini:
+  server:
+    root_url: https://{{ grafana_hostname }}
+  smtp:
+    enabled: true
+    host: {{ smtp_host }}
+    user: {{ smtp_user }}
+    password: {{ smtp_pass }}
+    from_address: {{ grafana_from_address }} 
+notifiers:
+  notifiers.yaml:
+    notifiers:
+    - name: email-notifier
+      type: email
+      uid: email1
+      is_default: true
+      settings:
+        addresses: {{ notif_recipients }} 

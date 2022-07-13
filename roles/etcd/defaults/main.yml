@@ -1,0 +1,16 @@
+etcd_version: "3.4.3"
+etcd_allow_downgrade: false
+etcd_force_reinstall: false
+etcd_sources_url: "https://github.com/coreos/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+
+etcd_user: "etcd"
+etcd_group: "etcd"
+
+etcd_base_path: "/opt/etcd"
+etcd_install_path: "/tmp/etcd/{{ etcd_version }}"
+etcd_data_path: "{{ etcd_base_path }}/data"
+etcd_wal_path: "{{ etcd_base_path }}/wal"
+etcd_conf_path: "/etc/etcd"
+
+
+etcd_no_file: 40000

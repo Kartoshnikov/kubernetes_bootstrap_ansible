@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+
+# keepalive: how many seconds between heartbeats
+keepalive 2
+
+# deadtime: seconds-to-declare-host-dead
+deadtime 10
+
+# What UDP port to use for udp or ppp-udp communication?
+udpport        694
+bcast  {{ hostvars[inventory_hostname].ansible_default_ipv4.interface }}
+mcast {{ hostvars[inventory_hostname].ansible_default_ipv4.interface }} 225.0.0.1 694 1 0
+ucast {{ hostvars[inventory_hostname].ansible_default_ipv4.interface }} {{ hostvars[inventory_hostname].ansible_host }}
+auto_failback on
+
+# What interfaces to heartbeat over?
+udp     {{ hostvars[inventory_hostname].ansible_default_ipv4.interface }}
+
+# Facility to use for syslog()/logger (alternative to log/debugfile)
+logfacility     local0
+
+# Tell what machines are in the cluster
+# node    nodename ...    -- must match uname -n
+{% for server in groups.haproxy %}
+node    {{ hostvars[server].ansible_hostname }}
+{% endfor %}

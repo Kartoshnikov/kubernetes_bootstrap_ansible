@@ -1,0 +1,30 @@
+---
+- name: test play
+  hosts: localhost
+  gather_facts: no #"{{ 'yes' if (haproxy_role_tags | length) == 0 else 'no' }}"
+  #roles:
+  # - role: k8s_worker
+
+  tasks:
+  - template:
+      src: test.conf.js
+      dest: /tmp/test.conf
+  # - set_fact:
+  #     test: | #"{{ groups.etcd | map('extract', hostvars, 'ansible_host') |  }}"
+  #       {% set sep = joiner(",") %}
+  #       {% for server in groups.etcd -%}
+  #       {{ sep() }}{{ hostvars[server].ansible_hostname }}=https://{{ hostvars[server].ansible_host }}:2379
+  #       {%- endfor %}
+
+  #- set_fact:
+  #    gluster_hosts: |
+  #      {% set comma = joiner("\r\n") %}
+  #      {% for item in ["first", "second"] -%}
+  #      {{ comma() }}server {{ item }};
+  #      {%- endfor %} 
+  #
+  #- debug: var=gluster_hosts
+
+  #- debug:
+  #    msg: "bash gk-deploy -gvy --admin-key {{ '--single-node' if gluster_hosts == '1' else '' }}"
+

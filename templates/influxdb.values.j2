@@ -1,0 +1,12 @@
+persistence:
+  storageClass: {{ storage_class_name }}
+  size: {{ influx_pv_size }}
+setDefaultUser:
+  user:
+    username: "{{ influxdb_admin_user }}"
+    password: "{{ influxdb_admin_pass }}"
+initScripts:
+  enabled: true
+  scripts:
+    init.iql: |+
+      CREATE DATABASE "{{ influx_telegraf_db }}" WITH DURATION {{ influx_telegraf_db_retention }} REPLICATION 1 NAME "rp_{{ influx_telegraf_db_retention }}"

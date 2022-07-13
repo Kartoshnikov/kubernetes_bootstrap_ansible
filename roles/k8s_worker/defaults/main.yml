@@ -1,0 +1,7 @@
+kube_version: "1.18.3"
+
+# apt-cache madison docker-ce
+docker_version: "5:19.03.11~3-0~ubuntu-bionic"
+docker_max_log_size: "100m"
+
+k8s_join_bootstrap_token: "783bde.3f89s0fje9f38fhf"

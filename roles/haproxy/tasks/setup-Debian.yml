@@ -1,0 +1,14 @@
+---
+- name: Debian - Ensure haproxy and heartbeat is installed
+  apt:
+    name: "{{ item }}"
+    state: present
+    cache_valid_time: 86400
+  loop:
+    - "haproxy"
+    - "keepalived"
+    # - "heartbeat"
+  notify:
+    - restart haproxy
+    - restart keepalived
+    # - restart heartbeat

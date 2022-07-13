@@ -1,0 +1,7 @@
+settings:
+  prometheus_port: {{ npd_prometheus_port }}
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "{{ npd_prometheus_port }}"
+

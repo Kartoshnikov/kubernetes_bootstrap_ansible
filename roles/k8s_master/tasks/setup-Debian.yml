@@ -1,0 +1,116 @@
+---
+- name: Disable system swap
+  shell: "swapoff -a"
+
+- name: Create symlink /usr/bin/python to /usr/bin/python3
+  file:
+    src: /usr/bin/python3
+    dest: /usr/bin/python
+    state: link
+
+- name: Remove current swaps from fstab
+  lineinfile:
+    dest: /etc/fstab
+    regexp: '(?i)^([^#][\S]+\s+(none|swap)\s+swap.*)'
+    line: '# \1'
+    backrefs: yes
+    state: present
+
+- name: create the 'kubernetes' user
+  user: 
+    name: kubernetes
+    append: yes
+    state: present
+    createhome: yes
+    shell: /bin/bash
+
+- name: allow 'kubernetes' to have passwordless sudo
+  lineinfile:
+    dest: /etc/sudoers
+    line: 'kubernetes ALL=(ALL) NOPASSWD: ALL'
+    validate: 'visudo -cf %s'
+
+- name: set up authorized keys for the kubernetes user
+  authorized_key: user=kubernetes key="{{item}}"
+  with_file:
+    - ~/.ssh/id_rsa.pub
+  when: copy_pud_key
+
+- name: install dependencies
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - acl
+    - apt-transport-https
+    - ca-certificates
+    - gnupg-agent
+    - software-properties-common
+    - ipvsadm
+
+- name: add Kubernetes and Docker apt-keys
+  apt_key:
+    url: "{{ item }}"
+    state: present
+  loop:
+    - "https://download.docker.com/linux/ubuntu/gpg"
+    - "https://packages.cloud.google.com/apt/doc/apt-key.gpg"
+
+- name: Add Kubernetes and Docker APT repository
+  apt_repository:
+    repo: "{{ item.repo }}"
+    state: present
+    filename: "{{ item.fname }}"
+  loop:
+    - { repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main", fname: "kubernetes" }
+    - { repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ hostvars[inventory_hostname].ansible_distribution_release }} stable", fname: "docker" }
+    - { repo: "ppa:gluster/glusterfs-7", fname: "glusterfs-7"}
+
+- name: Install packages
+  apt:
+    name: "{{ package }}"
+    state: present
+    # cache_valid_time: "{{ 0 if i == 0 else 86400 }}"
+    cache_valid_time: 86400
+  loop:
+    - "docker-ce={{ docker_version }}"
+    - "kubectl={{ kube_version }}-00"
+    - "kubelet={{ kube_version }}-00"
+    - "kubeadm={{ kube_version }}-00"
+    - "python3-pip"
+    - "glusterfs-client"
+    - "sysstat"
+  loop_control:
+    # index_var: i
+    loop_var: "package"
+  notify: restart docker
+
+- name: install pip packages
+  pip:
+    name:
+      - kubernetes
+      - kubernetes-validate
+      - openshift
+      - requests
+    state: latest
+    executable: pip3
+
+- name: Configure Docker Runtime
+  template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  notify: restart docker
+
+- name: Enable sadc
+  lineinfile:
+    dest: /etc/default/sysstat
+    regexp: '^(ENABLED=)'
+    line: '\1"true"'
+    backrefs: yes
+    state: present
+
+- name: Restart docker daemon
+  systemd:
+    name: docker
+    state: restarted

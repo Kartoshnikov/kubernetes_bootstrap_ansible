@@ -1,0 +1,92 @@
+---
+- name: ETCD | Installing dependencies
+  apt:
+    name: curl
+    state: present
+    cache_valid_time: 86400
+
+- name: ETCD | Ensure etcd group
+  group:
+    name: "{{ etcd_group }}"
+
+- name: ETCD | Ensure etcd user
+  user:
+    name: "{{ etcd_user }}"
+    group: "{{ etcd_group }}"
+    home: /bin/false
+  ignore_errors: true
+
+- name: ETCD | Create base and config paths
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ etcd_user }}"
+    group: "{{ etcd_group }}"
+  loop:
+    - "{{ etcd_base_path }}"
+    - "{{ etcd_conf_path }}"
+    - "{{ etcd_install_path }}"
+
+- name: ETCD | Create data and wal paths
+  file:
+    path: "{{ item }}"
+    mode: 0760
+    state: directory
+    owner: "{{ etcd_user }}"
+    group: "{{ etcd_user }}"
+  loop:
+    - "{{ etcd_data_path }}"
+    - "{{ etcd_wal_path }}"
+
+- name: ETCD | Check prev installation
+  stat: path=/usr/local/bin/etcd
+  register: etcd_check
+  changed_when: false
+
+- name: ETCD | Check etcd version
+  command: bash -c "etcd --version | grep 'etcd' | cut -d' ' -f3"
+  register: etcd_insalled_version
+  changed_when: false
+  ignore_errors: true
+  
+# - debug:
+#     msg: "{{ etcd_insalled_version.stdout }} {{ etcd_version }} | {{ etcd_insalled_version.stdout is version(etcd_version, '>') }}"
+
+  # - name: ETCD | Remove old version
+  #   file:
+  #     path: "{{ etcd_base_path }}/{{ item }}"
+  #     state: absent
+  #   loop: "{{ etcd_removeable_folders }}"
+
+- when: not etcd_check.stat.exists or ((etcd_insalled_version.stdout is version(etcd_version, '==') and etcd_force_reinstall) or 
+        (etcd_insalled_version.stdout is version(etcd_version, '>') and etcd_allow_downgrade) or
+        etcd_insalled_version.stdout is version(etcd_version, '<'))
+  block:
+  - name: ETCD | Stop service
+    systemd:
+      name: etcd
+      state: stopped
+    when: etcd_check.stat.exists
+
+  - name: ETCD | Untar etcd
+    unarchive:
+      extra_opts: ['--strip-components=1']
+      src: "{{ etcd_sources_url }}"
+      remote_src: true
+      dest: "{{ etcd_install_path }}"
+      owner: "{{ etcd_user }}"
+      group: "{{ etcd_group }}"
+
+  - name: ETCD | Copy etcd and etcdctl executables in /usr/local/bin
+    command: "cp --preserve=mode {{ etcd_install_path }}/{{ item }} /usr/local/bin/{{ item }}"
+    loop:
+      - etcd
+      - etcdctl
+    notify: restart etcd
+  
+  - name: ETCD | Copy Daemon script
+    template:
+      src: "etcd.service.j2"
+      dest: /etc/systemd/system/etcd.service
+      mode: 0644
+    notify: restart etcd

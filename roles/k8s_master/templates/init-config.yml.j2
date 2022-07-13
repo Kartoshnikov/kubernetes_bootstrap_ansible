@@ -1,0 +1,21 @@
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: ClusterConfiguration
+controlPlaneEndpoint: "k8sapi.example.com:6443"
+networking:
+  podSubnet: 10.244.0.0/16 
+etcd:
+  external:
+    caFile: /etc/kubernetes/pki/etcd/ca.crt
+---
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: InitConfiguration
+bootstrapTokens:
+- token: "{{ k8s_join_bootstrap_token }}"
+  description: "bootstrap token"
+  ttl: "30m"
+  usages:
+  - authentication
+  - signing
+  groups:
+  - system:bootstrappers:kubeadm:default-node-token
+certificateKey: "{{ k8s_join_certificate_key }}"

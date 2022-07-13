@@ -1,0 +1,56 @@
+---
+- run_once: true
+  delegate_to: "{{ groups.k8s_masters[0] }}"
+  become_user: kubernetes
+  block:
+  - name: Copy deploy script directory to master node
+    copy: 
+      src: files/heketi-glusterfs/
+      dest: ~/heketi-glusterfs/
+
+  - name: Set heketi pod name
+    command: kubectl get po -o jsonpath='{.items[?(@.metadata.labels.heketi=="pod")].metadata.name}'
+    register: heketi_pod_name
+
+  - name: Get topology info
+    command: "kubectl exec -it {{ heketi_pod_name.stdout }} -- heketi-cli --json topology info"
+    register: topology
+
+  - name: Tear down gluster installation
+    shell: "bash gk-deploy -gyv --abort --admin-key '{{ admin_key }}' --user-key '{{ user_key }}'"
+    args:
+      chdir: "~/heketi-glusterfs/"
+
+  - name: Remove gluster-kubernetes project
+    file:
+      path: ~/gluster-kubernetes
+      state: absent
+
+
+- name: Delete LVG
+  lvg:
+    vg: "vg_{{ item }}"
+    state: absent
+    force: yes
+  loop: "{{ topology.stdout | from_json | json_query('clusters[0].nodes[?hostnames.storage[0]==`' + hostvars[inventory_hostname].ansible_host + '`].devices[*].id') | flatten }}"
+
+
+- name: Remove PVs
+  command: "pvremove {{ item }}"
+  loop: "{{ topology.stdout | from_json | json_query('clusters[0].nodes[?hostnames.storage[0]==`' + hostvars[inventory_hostname].ansible_host + '`].devices[*].paths') | flatten }}"
+
+- name: Remove directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+  - /etc/glusterfs
+  - /var/lib/heketi
+  - /var/log/glusterfs
+  - /var/lib/glusterd
+  - /var/lib/misc/glusterfsd
+
+# - name: Get VG names
+#   debug:
+#     msg: "{{ item }}"
+#   loop: "{{ topology.stdout | from_json | json_query('clusters[0].nodes[?hostnames.storage[0]==`' + hostvars[inventory_hostname].ansible_host + '`].devices[*].id') | flatten }}"

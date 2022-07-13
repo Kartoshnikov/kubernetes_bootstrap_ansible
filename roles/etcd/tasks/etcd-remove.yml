@@ -1,0 +1,47 @@
+---
+
+- name: ETCD | Check if Etcd is already installed.
+  stat: path="{{ etcd_base_path }}"
+  register: etcd_installed
+
+- when: etcd_installed.stat.exists
+  block:
+  - name: ETCD | Stop
+    systemd: 
+      name: etcd
+      state: stopped
+
+  - name: ETCD | Remove etcd user
+    user:
+      name: "{{ etcd_user }}"
+      group: "{{ etcd_group }}"
+      state: absent
+    ignore_errors: true
+
+  - name: ETCD | Remove all paths
+    file:
+      path: "{{ item }}"
+      state: absent
+    loop:
+      - "{{ etcd_base_path }}"
+      - "{{ etcd_conf_path }}"
+      - "{{ etcd_data_path }}"
+      - "{{ etcd_install_path }}"
+      - "/etc/systemd/system/etcd.service"
+      - "/etc/systemd/system/multi-user.target.wants/etcd.service"
+      - "/usr/local/bin/etcd"
+      - "/usr/local/bin/etcdctl"
+      - "/etc/ssl/etcd/"
+
+  - name: Systemd daemon reload
+    systemd: daemon_reload=yes
+
+  - name: Check if node in is the cluster member
+    delegate_to: "{{ groups.etcd[0] }}"
+    shell: "etcdctl member list | grep {{ hostvars[inventory_hostname].ansible_default_ipv4.address }} | cut -d',' -f1"
+    register: if_member
+
+  - name: Delete member
+    when: if_member.stdout != ''
+    delegate_to: "{{ groups.etcd[0] }}"
+    command: "etcdctl member remove {{ if_member.stdout }}"

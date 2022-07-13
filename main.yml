@@ -1,0 +1,138 @@
+---
+- name: Install HAProxy with Heartbeat
+  hosts: haproxy
+  become: yes
+  vars_files:
+  - vars/secrets.yml
+  - vars/tags.yml
+  gather_facts: "{{ 'yes' if not (ansible_run_tags | intersect( ([haproxy_role_tags, 'config', 'install', 'remove', 'all'] | flatten(levels=1)) ) | length) == 0 else 'no' }}"
+  roles:
+  - role: haproxy
+    haprosy_virtual_ip: "192.168.10.120"
+
+
+- name: Install ETCD
+  hosts: etcd
+  become: yes
+  vars_files:
+  - vars/secrets.yml
+  - vars/tags.yml
+  gather_facts: "{{ 'yes' if not (ansible_run_tags | intersect( ([etcd_role_tags, 'config', 'install', 'remove', 'all'] | flatten(levels=1)) ) | length) == 0 else 'no' }}"
+  roles:
+  - role: etcd
+    etcd_version: "3.4.3"
+
+
+- name: Install Kubernetes master nodes
+  hosts: k8s_masters
+  serial: "{{ 0 if (ansible_run_tags | intersect( ['kmaster', 'all'] )) | length == 0 else ('[1, 100%]' | list) }}"
+  become: yes
+  vars_files:
+  - vars/secrets.yml
+  - vars/tags.yml
+  gather_facts: "{{ 'yes' if not (ansible_run_tags | intersect( ([kmaster_role_tags, 'config', 'install', 'remove', 'all'] | flatten(levels=1)) ) | length) == 0 else 'no' }}"
+  roles:
+  - role: k8s_master
+    kube_version: "{{ kube_ver }}"
+    docker_version: "{{ docker_ver }}"
+    copy_pud_key: true
+    k8s_api_dns: "{{ k8s_api_url }}"
+    k8s_join_bootstrap_token: "{{ k8s_join_token }}"
+
+
+- name: Install Kubernetes worker nodes
+  hosts: k8s_workers
+  become: yes
+  vars_files:
+  - vars/tags.yml
+  gather_facts: "{{ 'yes' if not (ansible_run_tags | intersect( ([kworker_role_tags, 'config', 'install', 'remove', 'all'] | flatten(levels=1)) ) | length) == 0 else 'no' }}"
+  roles:
+  - role: k8s_worker
+    kube_version: "{{ kube_ver }}"
+    docker_version: "{{ docker_ver }}"
+    k8s_api_dns: "{{ k8s_api_url }}"
+    k8s_join_bootstrap_token: "{{ k8s_join_token }}"
+
+
+- name: Install GlusterFS
+  hosts: glusterfs
+  become: yes
+  vars_files:
+  - vars/tags.yml
+  gather_facts: "{{ 'yes' if not (ansible_run_tags | intersect( ([glusterfs_role_tags, 'config', 'install', 'remove', 'all'] | flatten(levels=1)) ) | length) == 0 else 'no' }}"
+  roles:
+  - role: glusterfs
+
+
+- name: Install ElasticSearch
+  hosts: elastic
+  become: yes
+  vars_files:
+  - vars/tags.yml
+  gather_facts: "{{ 'yes' if not (ansible_run_tags | intersect( ([elasticsearch_role_tags, 'config', 'install', 'remove', 'all'] | flatten(levels=1)) ) | length) == 0 else 'no' }}"
+  roles:
+  - role: elasticsearch
+    es_version: "7.9.2"
+    es_exporter_ver: "1.1.0"
+    es_exporter_port: "{{ elasticsearch_exporter_port }}"
+    es_data_dirs: 
+      - "/opt/elasticsearch/data"
+    es_log_dir: "/opt/elasticsearch/logs"
+    es_heap_size: "4g"
+    es_config:
+      cluster.name: "example-logs"
+      discovery.seed_hosts: "{{ groups.elastic | map('extract', hostvars, 'ansible_host') | zip([elastic_transport_port,]*(groups.elastic | length)) | map('join', ':') | join(', ') }}"
+      cluster.initial_master_nodes: "{{ ', '.join(groups.elastic) }}"
+      network.host: "_site_, _local_"
+      http.port: "{{ elastic_data_port }}"
+      transport.port: "{{ elastic_transport_port }}"
+      bootstrap.memory_lock: true
+
+
+- name: Deploy MISCs (MetalLB, Nginx Ingress and etc.)
+  hosts: "{{ groups.k8s_masters[0] }}"
+  become: yes
+  become_user: kubernetes
+  vars_files:
+  - vars/tags.yml
+  vars:
+    npd_prometheus_port: "20257"
+    internal_ingress_name: "nginx-internal"
+    notif_recipients: "dkartoshnikov@example.com"
+    smtp_host: "smtpout.europe.secureserver.net:587"
+    smtp_user: "welcome@example.com"
+    smtp_pass: "test"
+    rocket_web_hook_url: "https://im.example.com/hooks/cub2DrsbkX7ZPhsdfwe432ZA8/kvxYABejsfPTSzyAEhnpQyx3oR4pq7tTdKcPTWAP5sjkB"
+    metrics_ns: "monitoring" 
+    dashboards_hostname: "k8s-dashboard.example.com"
+    influxdb_name: "influxdb"
+    influxdb_admin_user: "admin"
+    influxdb_admin_pass: "test"
+    influx_telegraf_db: "telegraf"
+    influx_telegraf_db_retention: "14d"
+    influx_pv_size: "50Gi"
+    telegraf_prometheus_client_port: "9273"
+    grafana_user: "admin"
+    grafana_pass: "test"
+    grafana_hostname: "k8s-grafana.example.com"
+    grafana_pv_size: "10Gi"
+    grafana_from_address: "grafana@example.com"
+    grafana_plagins:
+    - grafana-clock-panel
+    - vonage-status-panel
+    - grafana-kubernetes-app
+    - agenty-flowcharting-panel
+    - digrich-bubblechart-panel
+    - btplc-status-dot-panel
+    prometheus_hostname: "k8s-prometheus.example.com"
+    prometheus_alertmanager_hostname: "k8s-alertmanager.example.com"
+    prometheus_name: "prometheus"
+    prometheus_server_db_size: "50Gi"
+    prometheus_retention_time: "14d"
+    es_exporter_port: "{{ elasticsearch_exporter_port }}"
+    kibana_hostname: "k8s-kibana.example.com"
+  gather_facts: "{{ 'yes' if (ansible_run_tags | intersect( (['all', 'deploy_misc'] | flatten(levels=1)) ) | length) != 0 else 'no' }}"
+  tasks:
+  - name: Deploy MICS
+    include: deploy_misc.yml
+    tags: deploy_misc
